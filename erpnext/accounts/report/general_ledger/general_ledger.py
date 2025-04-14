@@ -208,6 +208,10 @@ def get_gl_entries(filters, accounting_dimensions):
 def get_conditions(filters):
 	conditions = []
 
+	ignore_is_opening = frappe.db.get_single_value(
+		"Accounts Settings", "ignore_is_opening_check_for_reporting"
+	)
+
 	if filters.get("account"):
 		filters.account = get_accounts_with_children(filters.account)
 		if filters.account:
@@ -270,9 +274,15 @@ def get_conditions(filters):
 		or filters.get("party")
 		or filters.get("group_by") in ["Group by Account", "Group by Party"]
 	):
-		conditions.append("(posting_date >=%(from_date)s or is_opening = 'Yes')")
+		if not ignore_is_opening:
+			conditions.append("(posting_date >=%(from_date)s or is_opening = 'Yes')")
+		else:
+			conditions.append("posting_date >=%(from_date)s")
 
-	conditions.append("(posting_date <=%(to_date)s or is_opening = 'Yes')")
+	if not ignore_is_opening:
+		conditions.append("(posting_date <=%(to_date)s or is_opening = 'Yes')")
+	else:
+		conditions.append("posting_date <=%(to_date)s")
 
 	if filters.get("project"):
 		conditions.append("project in %(project)s")
@@ -524,6 +534,7 @@ def get_accountwise_gle(filters, accounting_dimensions, gl_entries, gle_map, tot
 					for dim in accounting_dimensions:
 						keylist.append(gle.get(dim))
 					keylist.append(gle.get("cost_center"))
+					keylist.append(gle.get("project"))
 
 				key = tuple(keylist)
 				if key not in consolidated_gle:
@@ -669,10 +680,11 @@ def get_columns(filters):
 		{"label": _("Against Account"), "fieldname": "against", "width": 120},
 		{"label": _("Party Type"), "fieldname": "party_type", "width": 100},
 		{"label": _("Party"), "fieldname": "party", "width": 100},
-		{"label": _("Project"), "options": "Project", "fieldname": "project", "width": 100},
 	]
 
 	if filters.get("include_dimensions"):
+		columns.append({"label": _("Project"), "options": "Project", "fieldname": "project", "width": 100})
+
 		for dim in get_accounting_dimensions(as_list=False):
 			columns.append(
 				{"label": _(dim.label), "options": dim.label, "fieldname": dim.fieldname, "width": 100}

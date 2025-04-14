@@ -279,9 +279,7 @@ def get_regional_address_details(party_details, doctype, company):
 	pass
 
 
-def set_contact_details(party_details, party, party_type):
-	party_details.contact_person = get_default_contact(party_type, party.name)
-
+def complete_contact_details(party_details):
 	if not party_details.contact_person:
 		party_details.update(
 			{
@@ -308,6 +306,11 @@ def set_contact_details(party_details, party, party_type):
 		contact_details = frappe.db.get_value("Contact", party_details.contact_person, fields, as_dict=True)
 
 		party_details.update(contact_details)
+
+
+def set_contact_details(party_details, party, party_type):
+	party_details.contact_person = get_default_contact(party_type, party.name)
+	complete_contact_details(party_details)
 
 
 def set_other_values(party_details, party, party_type):
@@ -572,12 +575,13 @@ def validate_party_accounts(doc):
 
 
 @frappe.whitelist()
-def get_due_date(posting_date, party_type, party, company=None, bill_date=None):
+def get_due_date(posting_date, party_type, party, company=None, bill_date=None, template_name=None):
 	"""Get due date from `Payment Terms Template`"""
 	due_date = None
 	if (bill_date or posting_date) and party:
 		due_date = bill_date or posting_date
-		template_name = get_payment_terms_template(party, party_type, company)
+		if not template_name:
+			template_name = get_payment_terms_template(party, party_type, company)
 
 		if template_name:
 			due_date = get_due_date_from_template(template_name, posting_date, bill_date).strftime("%Y-%m-%d")
@@ -676,7 +680,7 @@ def set_taxes(
 ):
 	from erpnext.accounts.doctype.tax_rule.tax_rule import get_party_details, get_tax_template
 
-	args = {party_type.lower(): party, "company": company}
+	args = {frappe.scrub(party_type): party, "company": company}
 
 	if tax_category:
 		args["tax_category"] = tax_category
@@ -696,10 +700,10 @@ def set_taxes(
 	else:
 		args.update(get_party_details(party, party_type))
 
-	if party_type in ("Customer", "Lead", "Prospect"):
+	if party_type in ("Customer", "Lead", "Prospect", "CRM Deal"):
 		args.update({"tax_type": "Sales"})
 
-		if party_type in ["Lead", "Prospect"]:
+		if party_type in ["Lead", "Prospect", "CRM Deal"]:
 			args["customer"] = None
 			del args[frappe.scrub(party_type)]
 	else:
@@ -757,6 +761,20 @@ def validate_party_frozen_disabled(party_type, party_name):
 		elif party_type == "Employee":
 			if frappe.db.get_value("Employee", party_name, "status") != "Active":
 				frappe.msgprint(_("{0} {1} is not active").format(party_type, party_name), alert=True)
+
+
+def validate_account_party_type(self):
+	if self.is_cancelled:
+		return
+
+	if self.party_type and self.party:
+		account_type = frappe.get_cached_value("Account", self.account, "account_type")
+		if account_type and (account_type not in ["Receivable", "Payable", "Equity"]):
+			frappe.throw(
+				_(
+					"Party Type and Party can only be set for Receivable / Payable account<br><br>" "{0}"
+				).format(self.account)
+			)
 
 
 def get_dashboard_info(party_type, party, loyalty_program=None):

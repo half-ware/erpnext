@@ -152,6 +152,7 @@ class WorkOrder(Document):
 		self.validate_sales_order()
 		self.set_default_warehouse()
 		self.validate_warehouse_belongs_to_company()
+		self.check_wip_warehouse_skip()
 		self.calculate_operating_cost()
 		self.validate_qty()
 		self.validate_transfer_against()
@@ -163,7 +164,7 @@ class WorkOrder(Document):
 		if self.source_warehouse:
 			self.set_warehouses()
 
-		validate_uom_is_integer(self, "stock_uom", ["qty", "produced_qty"])
+		validate_uom_is_integer(self, "stock_uom", ["required_qty"])
 
 		self.set_required_items(reset_only_qty=len(self.get("required_items")))
 
@@ -250,6 +251,10 @@ class WorkOrder(Document):
 			self.wip_warehouse = frappe.db.get_single_value("Manufacturing Settings", "default_wip_warehouse")
 		if not self.fg_warehouse:
 			self.fg_warehouse = frappe.db.get_single_value("Manufacturing Settings", "default_fg_warehouse")
+
+	def check_wip_warehouse_skip(self):
+		if self.skip_transfer and not self.from_wip_warehouse:
+			self.wip_warehouse = None
 
 	def validate_warehouse_belongs_to_company(self):
 		warehouses = [self.fg_warehouse, self.wip_warehouse]
@@ -343,8 +348,9 @@ class WorkOrder(Document):
 				if flt(self.material_transferred_for_manufacturing) > 0:
 					status = "In Process"
 
-				total_qty = flt(self.produced_qty) + flt(self.process_loss_qty)
-				if flt(total_qty) >= flt(self.qty):
+				precision = frappe.get_precision("Work Order", "produced_qty")
+				total_qty = flt(self.produced_qty, precision) + flt(self.process_loss_qty, precision)
+				if flt(total_qty, precision) >= flt(self.qty, precision):
 					status = "Completed"
 		else:
 			status = "Cancelled"
@@ -1421,7 +1427,11 @@ def make_stock_entry(work_order_id, purpose, qty=None, target_warehouse=None):
 		stock_entry.to_warehouse = wip_warehouse
 		stock_entry.project = work_order.project
 	else:
-		stock_entry.from_warehouse = wip_warehouse
+		stock_entry.from_warehouse = (
+			work_order.source_warehouse
+			if work_order.skip_transfer and not work_order.from_wip_warehouse
+			else wip_warehouse
+		)
 		stock_entry.to_warehouse = work_order.fg_warehouse
 		stock_entry.project = work_order.project
 
@@ -1509,7 +1519,9 @@ def close_work_order(work_order, status):
 	work_order = frappe.get_doc("Work Order", work_order)
 	if work_order.get("operations"):
 		job_cards = frappe.get_list(
-			"Job Card", filters={"work_order": work_order.name, "status": "Work In Progress"}, pluck="name"
+			"Job Card",
+			filters={"work_order": work_order.name, "status": "Work In Progress", "docstatus": 1},
+			pluck="name",
 		)
 
 		if job_cards:
@@ -1604,11 +1616,13 @@ def create_job_card(work_order, row, enable_capacity_planning=False, auto_create
 			"posting_date": nowdate(),
 			"for_quantity": row.job_card_qty or work_order.get("qty", 0),
 			"operation_id": row.get("name"),
-			"bom_no": work_order.bom_no,
+			"bom_no": row.get("bom") or work_order.bom_no,
 			"project": work_order.project,
 			"company": work_order.company,
 			"sequence_id": row.get("sequence_id"),
-			"wip_warehouse": work_order.wip_warehouse,
+			"wip_warehouse": work_order.wip_warehouse or row.get("wip_warehouse")
+			if not work_order.skip_transfer or work_order.from_wip_warehouse
+			else work_order.source_warehouse or row.get("source_warehouse"),
 			"hour_rate": row.get("hour_rate"),
 			"serial_no": row.get("serial_no"),
 		}
