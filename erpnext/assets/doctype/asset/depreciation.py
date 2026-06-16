@@ -24,7 +24,7 @@ import erpnext
 from erpnext.accounts.doctype.accounting_dimension.accounting_dimension import (
 	get_checks_for_pl_and_bs_accounts,
 )
-from erpnext.accounts.doctype.journal_entry.journal_entry import make_reverse_journal_entry
+from erpnext.accounts.doctype.journal_entry.mapper import make_reverse_journal_entry
 from erpnext.assets.doctype.asset_activity.asset_activity import add_asset_activity
 from erpnext.assets.doctype.asset_depreciation_schedule.asset_depreciation_schedule import (
 	get_asset_depr_schedule_doc,
@@ -62,7 +62,9 @@ def book_depreciation_entries(date):
 				accounting_dimensions,
 			)
 
-			frappe.db.commit()
+			if not frappe.in_test:
+				frappe.db.commit()
+
 		except Exception as e:
 			frappe.db.rollback()
 			failed_assets.append(asset_name)
@@ -72,7 +74,8 @@ def book_depreciation_entries(date):
 	if failed_assets:
 		set_depr_entry_posting_status_for_failed_assets(failed_assets)
 		notify_depr_entry_posting_error(failed_assets, error_logs)
-	frappe.db.commit()
+	if not frappe.in_test:
+		frappe.db.commit()
 
 
 def get_depreciable_assets_data(date):
@@ -358,6 +361,7 @@ def get_message_for_depr_entry_posting_error(asset_links, error_log_links):
 
 @frappe.whitelist()
 def scrap_asset(asset_name: str, scrap_date: DateTimeLikeObject | None = None):
+	frappe.has_permission("Asset", "write", asset_name, throw=True)
 	asset = frappe.get_doc("Asset", asset_name)
 	scrap_date = getdate(scrap_date) or getdate(today())
 	asset.db_set("disposal_date", scrap_date)
@@ -447,6 +451,7 @@ def create_journal_entry_for_scrap(asset, scrap_date):
 
 @frappe.whitelist()
 def restore_asset(asset_name: str):
+	frappe.has_permission("Asset", "write", asset_name, throw=True)
 	asset = frappe.get_doc("Asset", asset_name)
 	reverse_depreciation_entry_made_on_disposal(asset)
 	reset_depreciation_schedule(asset, get_note_for_restore(asset))

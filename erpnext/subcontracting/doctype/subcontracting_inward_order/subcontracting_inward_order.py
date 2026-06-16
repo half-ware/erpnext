@@ -26,8 +26,8 @@ class SubcontractingInwardOrder(SubcontractingController):
 		from erpnext.subcontracting.doctype.subcontracting_inward_order_received_item.subcontracting_inward_order_received_item import (
 			SubcontractingInwardOrderReceivedItem,
 		)
-		from erpnext.subcontracting.doctype.subcontracting_inward_order_scrap_item.subcontracting_inward_order_scrap_item import (
-			SubcontractingInwardOrderScrapItem,
+		from erpnext.subcontracting.doctype.subcontracting_inward_order_secondary_item.subcontracting_inward_order_secondary_item import (
+			SubcontractingInwardOrderSecondaryItem,
 		)
 		from erpnext.subcontracting.doctype.subcontracting_inward_order_service_item.subcontracting_inward_order_service_item import (
 			SubcontractingInwardOrderServiceItem,
@@ -49,7 +49,7 @@ class SubcontractingInwardOrder(SubcontractingController):
 		per_returned: DF.Percent
 		received_items: DF.Table[SubcontractingInwardOrderReceivedItem]
 		sales_order: DF.Link
-		scrap_items: DF.Table[SubcontractingInwardOrderScrapItem]
+		secondary_items: DF.Table[SubcontractingInwardOrderSecondaryItem]
 		service_items: DF.Table[SubcontractingInwardOrderServiceItem]
 		set_delivery_warehouse: DF.Link | None
 		status: DF.Literal[
@@ -372,13 +372,14 @@ class SubcontractingInwardOrder(SubcontractingController):
 			items_dict = {
 				rm_item.get("rm_item_code"): {
 					"scio_detail": rm_item.get("name"),
+					"item_code": rm_item.get("rm_item_code"),
 					"qty": calculate_qty_as_per_bom(rm_item),
-					"to_warehouse": rm_item.get("warehouse"),
+					"t_warehouse": rm_item.get("warehouse"),
 					"stock_uom": rm_item.get("stock_uom"),
 				}
 			}
 
-			stock_entry.add_to_stock_entry_detail(items_dict)
+			stock_entry.append("items", items_dict[rm_item.get("rm_item_code")])
 
 		if target_doc:
 			return stock_entry
@@ -413,13 +414,16 @@ class SubcontractingInwardOrder(SubcontractingController):
 			items_dict = {
 				rm_item.get("rm_item_code"): {
 					"scio_detail": rm_item.get("name"),
+					"item_code": rm_item.get("rm_item_code"),
 					"qty": rm_item.received_qty - rm_item.work_order_qty - rm_item.returned_qty,
-					"from_warehouse": rm_item.get("warehouse"),
+					"s_warehouse": rm_item.get("warehouse"),
 					"stock_uom": rm_item.get("stock_uom"),
 				}
 			}
 
-			stock_entry.add_to_stock_entry_detail(items_dict)
+			ste_item = items_dict[rm_item.get("rm_item_code")]
+			if ste_item.get("qty"):
+				stock_entry.append("items", ste_item)
 
 		if target_doc:
 			return stock_entry
@@ -465,37 +469,41 @@ class SubcontractingInwardOrder(SubcontractingController):
 			items_dict = {
 				fg_item.item_code: {
 					"qty": qty,
-					"from_warehouse": fg_item.delivery_warehouse,
+					"item_code": fg_item.item_code,
+					"s_warehouse": fg_item.delivery_warehouse,
 					"stock_uom": fg_item.stock_uom,
 					"scio_detail": fg_item.name,
 					"is_finished_item": 1,
 				}
 			}
 
-			stock_entry.add_to_stock_entry_detail(items_dict)
+			stock_entry.append("items", items_dict[fg_item.item_code])
 
 		if (
-			frappe.get_single_value("Selling Settings", "deliver_scrap_items")
-			and self.scrap_items
+			frappe.get_single_value("Selling Settings", "deliver_secondary_items")
+			and self.secondary_items
 			and scio_details
 		):
-			scrap_items = [
-				scrap_item for scrap_item in self.scrap_items if scrap_item.reference_name in scio_details
+			secondary_items = [
+				secondary_item
+				for secondary_item in self.secondary_items
+				if secondary_item.reference_name in scio_details
 			]
-			for scrap_item in scrap_items:
-				qty = scrap_item.produced_qty - scrap_item.delivered_qty
+			for secondary_item in secondary_items:
+				qty = secondary_item.produced_qty - secondary_item.delivered_qty
 				if qty > 0:
 					items_dict = {
-						scrap_item.item_code: {
-							"qty": scrap_item.produced_qty - scrap_item.delivered_qty,
-							"from_warehouse": scrap_item.warehouse,
-							"stock_uom": scrap_item.stock_uom,
-							"scio_detail": scrap_item.name,
-							"is_scrap_item": 1,
+						secondary_item.item_code: {
+							"qty": secondary_item.produced_qty - secondary_item.delivered_qty,
+							"item_code": secondary_item.item_code,
+							"s_warehouse": secondary_item.warehouse,
+							"stock_uom": secondary_item.stock_uom,
+							"scio_detail": secondary_item.name,
+							"secondary_item_type": secondary_item.secondary_item_type,
 						}
 					}
 
-					stock_entry.add_to_stock_entry_detail(items_dict)
+					stock_entry.append("items", items_dict[secondary_item.item_code])
 
 		if target_doc:
 			return stock_entry
@@ -534,13 +542,14 @@ class SubcontractingInwardOrder(SubcontractingController):
 			items_dict = {
 				fg_item.item_code: {
 					"qty": qty,
+					"item_code": fg_item.item_code,
 					"stock_uom": fg_item.stock_uom,
 					"scio_detail": fg_item.name,
 					"is_finished_item": 1,
 				}
 			}
 
-			stock_entry.add_to_stock_entry_detail(items_dict)
+			stock_entry.append("items", items_dict[fg_item.item_code])
 
 		if target_doc:
 			return stock_entry
@@ -548,9 +557,18 @@ class SubcontractingInwardOrder(SubcontractingController):
 			return stock_entry.as_dict()
 
 
-@frappe.whitelist()
-def update_subcontracting_inward_order_status(scio: str | Document, status: str | None = None):
+def set_subcontracting_inward_order_status(scio: str | Document, status: str | None = None):
 	if isinstance(scio, str):
 		scio = frappe.get_doc("Subcontracting Inward Order", scio)
 
 	scio.update_status(status)
+
+
+@frappe.whitelist()
+def update_subcontracting_inward_order_status(scio: str | Document, status: str | None = None):
+	"""Whitelisted boundary for direct API/UI calls — enforces write permission, then delegates."""
+	if isinstance(scio, str):
+		scio = frappe.get_doc("Subcontracting Inward Order", scio)
+
+	scio.check_permission("write")
+	set_subcontracting_inward_order_status(scio, status)

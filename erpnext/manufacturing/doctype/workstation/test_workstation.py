@@ -2,7 +2,6 @@
 # See license.txt
 import frappe
 from frappe import _
-from frappe.tests import IntegrationTestCase
 
 from erpnext.manufacturing.doctype.operation.test_operation import make_operation
 from erpnext.manufacturing.doctype.routing.test_routing import create_routing, setup_bom
@@ -10,12 +9,23 @@ from erpnext.manufacturing.doctype.workstation.workstation import (
 	NotInWorkingHoursError,
 	WorkstationHolidayError,
 	check_if_within_operating_hours,
+	update_job_card,
 )
+from erpnext.tests.utils import ERPNextTestSuite
 
-EXTRA_TEST_RECORD_DEPENDENCIES = ["Warehouse"]
 
+class TestWorkstation(ERPNextTestSuite):
+	def test_update_job_card_rejects_disallowed_method(self):
+		# The whitelisted update_job_card endpoint must only run an allowlisted set of Job Card
+		# methods. An arbitrary method name must be rejected (PermissionError) before the document
+		# is even loaded, so this needs no Job Card to exist.
+		self.assertRaises(
+			frappe.PermissionError,
+			update_job_card,
+			"NON-EXISTENT-JOB-CARD",
+			"delete",
+		)
 
-class TestWorkstation(IntegrationTestCase):
 	def test_validate_timings(self):
 		check_if_within_operating_hours(
 			"_Test Workstation 1", "Operation 1", "2013-02-02 11:00:00", "2013-02-02 19:00:00"

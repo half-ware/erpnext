@@ -1,18 +1,17 @@
 import frappe
-from frappe.tests import IntegrationTestCase
 
 from erpnext.stock.get_item_details import get_item_details
+from erpnext.tests.utils import ERPNextTestSuite
 
-EXTRA_TEST_RECORD_DEPENDENCIES = ["Customer", "Supplier", "Item", "Price List", "Item Price"]
 
-
-class TestGetItemDetail(IntegrationTestCase):
+class TestGetItemDetail(ERPNextTestSuite):
 	def test_get_item_detail_purchase_order(self):
 		args = frappe._dict(
 			{
 				"item_code": "_Test Item",
-				"company": "_Test Company",
+				"company": "_Test Company 1",
 				"customer": "_Test Customer",
+				"currency": "USD",
 				"conversion_rate": 1.0,
 				"price_list_currency": "USD",
 				"plc_conversion_rate": 1.0,
@@ -79,7 +78,7 @@ class TestGetItemDetail(IntegrationTestCase):
 
 		so = make_sales_order(item_code=item.item_code, qty=2, rate=75)
 
-		from erpnext.selling.doctype.sales_order.sales_order import make_delivery_note
+		from erpnext.selling.doctype.sales_order.mapper import make_delivery_note
 
 		dn = make_delivery_note(so.name)
 

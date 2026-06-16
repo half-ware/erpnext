@@ -9,11 +9,17 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.model.meta import get_field_precision
 from frappe.query_builder.custom import ConstantColumn
+from frappe.query_builder.functions import Sum
 from frappe.utils import cint, flt
 
 import erpnext
+from erpnext import is_perpetual_inventory_enabled
 from erpnext.controllers.taxes_and_totals import init_landed_taxes_and_totals
 from erpnext.stock.doctype.serial_no.serial_no import get_serial_nos
+
+
+class IncorrectCompanyValidationError(frappe.ValidationError):
+	pass
 
 
 class LandedCostVoucher(Document):
@@ -77,6 +83,7 @@ class LandedCostVoucher(Document):
 		self.check_mandatory()
 		self.validate_receipt_documents()
 		self.validate_line_items()
+		self.validate_expense_accounts()
 		init_landed_taxes_and_totals(self)
 		self.set_total_taxes_and_charges()
 		if not self.get("items"):
@@ -118,10 +125,27 @@ class LandedCostVoucher(Document):
 		receipt_documents = []
 
 		for d in self.get("purchase_receipts"):
-			docstatus = frappe.db.get_value(d.receipt_document_type, d.receipt_document, "docstatus")
+			docstatus, company = frappe.get_cached_value(
+				d.receipt_document_type, d.receipt_document, ["docstatus", "company"]
+			)
 			if docstatus != 1:
 				msg = f"Row {d.idx}: {d.receipt_document_type} {frappe.bold(d.receipt_document)} must be submitted"
 				frappe.throw(_(msg), title=_("Invalid Document"))
+
+			if company != self.company:
+				frappe.throw(
+					_(
+						"Row {0}: {1} {2} is linked to company {3}. Please select a document belonging to company {4}."
+					).format(
+						d.idx,
+						d.receipt_document_type,
+						frappe.bold(d.receipt_document),
+						frappe.bold(company),
+						frappe.bold(self.company),
+					),
+					title=_("Incorrect Company"),
+					exc=IncorrectCompanyValidationError,
+				)
 
 			if d.receipt_document_type == "Purchase Invoice":
 				update_stock = frappe.db.get_value(
@@ -152,6 +176,27 @@ class LandedCostVoucher(Document):
 			if not item.cost_center:
 				frappe.throw(
 					_("Row {0}: Cost center is required for an item {1}").format(item.idx, item.item_code)
+				)
+
+	def validate_expense_accounts(self):
+		if not is_perpetual_inventory_enabled(self.company):
+			return
+
+		for t in self.taxes:
+			company = frappe.get_cached_value("Account", t.expense_account, "company")
+
+			if company != self.company:
+				frappe.throw(
+					_(
+						"Row {0}: Expense Account {1} is linked to company {2}. Please select an account belonging to company {3}."
+					).format(
+						t.idx,
+						frappe.bold(t.expense_account),
+						frappe.bold(company),
+						frappe.bold(self.company),
+					),
+					title=_("Incorrect Account"),
+					exc=IncorrectCompanyValidationError,
 				)
 
 	def set_total_taxes_and_charges(self):
@@ -270,7 +315,7 @@ class LandedCostVoucher(Document):
 				self.validate_asset_qty_and_status(d.receipt_document_type, doc)
 
 			# set landed cost voucher amount in pr item
-			doc.set_landed_cost_voucher_amount()
+			set_landed_cost_voucher_amount(doc)
 
 			if d.receipt_document_type == "Subcontracting Receipt":
 				doc.calculate_items_qty_and_amount()
@@ -479,3 +524,93 @@ def get_vendor_invoice_query(filters):
 		query = query.where(doctype.name == filters.get("name"))
 
 	return query
+
+
+def set_landed_cost_voucher_amount(doc):
+	"""Set landed_cost_voucher_amount on the receipt document's items from submitted LCVs."""
+	for d in doc.get("items"):
+		lcv_item = frappe.qb.DocType("Landed Cost Item")
+		query = (
+			frappe.qb.from_(lcv_item)
+			.select(Sum(lcv_item.applicable_charges), lcv_item.cost_center)
+			.where((lcv_item.docstatus == 1) & (lcv_item.receipt_document == doc.name))
+		)
+
+		if doc.doctype == "Stock Entry":
+			query = query.where(lcv_item.stock_entry_item == d.name)
+		else:
+			query = query.where(lcv_item.purchase_receipt_item == d.name)
+
+		lc_voucher_data = query.run(as_list=True)
+
+		d.landed_cost_voucher_amount = lc_voucher_data[0][0] if lc_voucher_data else 0.0
+		if not d.cost_center and lc_voucher_data and lc_voucher_data[0][1]:
+			d.db_set("cost_center", lc_voucher_data[0][1])
+
+
+def has_landed_cost_amount(doc):
+	for row in doc.items:
+		if row.get("landed_cost_voucher_amount"):
+			return True
+
+	return False
+
+
+def get_item_account_wise_lcv_entries(doc):
+	"""Account-wise landed-cost map for a receipt document, consumed by the GL composers."""
+	if not has_landed_cost_amount(doc):
+		return
+
+	landed_cost_vouchers = frappe.get_all(
+		"Landed Cost Purchase Receipt",
+		fields=["parent"],
+		filters={"receipt_document": doc.name, "docstatus": 1},
+	)
+
+	if not landed_cost_vouchers:
+		return
+
+	item_account_wise_cost = {}
+
+	row_fieldname = "purchase_receipt_item"
+	if doc.doctype == "Stock Entry":
+		row_fieldname = "stock_entry_item"
+
+	for lcv in landed_cost_vouchers:
+		landed_cost_voucher_doc = frappe.get_doc("Landed Cost Voucher", lcv.parent)
+
+		based_on_field = "applicable_charges"
+		# Use amount field for total item cost for manually cost distributed LCVs
+		if landed_cost_voucher_doc.distribute_charges_based_on != "Distribute Manually":
+			based_on_field = frappe.scrub(landed_cost_voucher_doc.distribute_charges_based_on)
+
+		total_item_cost = 0
+
+		if based_on_field:
+			for item in landed_cost_voucher_doc.items:
+				total_item_cost += item.get(based_on_field)
+
+		for item in landed_cost_voucher_doc.items:
+			if item.receipt_document == doc.name:
+				for account in landed_cost_voucher_doc.taxes:
+					exchange_rate = account.exchange_rate or 1
+					item_account_wise_cost.setdefault((item.item_code, item.get(row_fieldname)), {})
+					item_account_wise_cost[(item.item_code, item.get(row_fieldname))].setdefault(
+						account.expense_account, {"amount": 0.0, "base_amount": 0.0}
+					)
+
+					item_row = item_account_wise_cost[(item.item_code, item.get(row_fieldname))][
+						account.expense_account
+					]
+
+					if total_item_cost > 0:
+						item_row["amount"] += account.amount * item.get(based_on_field) / total_item_cost
+
+						item_row["base_amount"] += (
+							account.base_amount * item.get(based_on_field) / total_item_cost
+						)
+					else:
+						item_row["amount"] += item.applicable_charges / exchange_rate
+						item_row["base_amount"] += item.applicable_charges
+
+	return item_account_wise_cost

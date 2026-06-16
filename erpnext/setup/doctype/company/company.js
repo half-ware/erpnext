@@ -69,6 +69,22 @@ frappe.ui.form.on("Company", {
 				},
 			};
 		});
+
+		frm.set_query("default_letter_head", function () {
+			return {
+				filters: {
+					letter_head_for: "DocType",
+				},
+			};
+		});
+
+		frm.set_query("default_letter_head_report", function () {
+			return {
+				filters: {
+					letter_head_for: "Report",
+				},
+			};
+		});
 	},
 
 	company_name: function (frm) {
@@ -211,7 +227,9 @@ frappe.ui.form.on("Company", {
 							{
 								fieldtype: "Data",
 								fieldname: "company_name",
-								label: __("Please enter the company name to confirm"),
+								label: __('Please enter the company name <b>"{0}"</b> to confirm', [
+									frappe.utils.escape_html(frm.doc.name),
+								]),
 								reqd: 1,
 								description: __(
 									"Please make sure you really want to delete all the transactions for this company. Your master data will remain as it is. This action cannot be undone."
@@ -319,6 +337,10 @@ erpnext.company.setup_queries = function (frm) {
 				[
 					"stock_received_but_not_billed",
 					{ root_type: "Liability", account_type: "Stock Received But Not Billed" },
+				],
+				[
+					"stock_delivered_but_not_billed",
+					{ root_type: "Liability", account_type: "Stock Delivered But Not Billed" },
 				],
 				[
 					"service_received_but_not_billed",

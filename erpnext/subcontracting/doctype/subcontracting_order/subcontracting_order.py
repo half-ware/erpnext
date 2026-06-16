@@ -138,9 +138,6 @@ class SubcontractingOrder(SubcontractingController):
 			if not po.is_subcontracted:
 				frappe.throw(_("Please select a valid Purchase Order that is configured for Subcontracting."))
 
-			if po.is_old_subcontracting_flow:
-				frappe.throw(_("Please select a valid Purchase Order that has Service Items."))
-
 			if po.docstatus != 1:
 				msg = f"Please submit Purchase Order {po.name} before proceeding."
 				frappe.throw(_(msg))
@@ -201,9 +198,8 @@ class SubcontractingOrder(SubcontractingController):
 			item.amount = item.qty * item.rate
 			total_qty += flt(item.qty)
 			total += flt(item.amount)
-		else:
-			self.total_qty = total_qty
-			self.total = total
+		self.total_qty = total_qty
+		self.total = total
 
 	def update_ordered_qty_for_subcontracting(self, sco_item_rows=None):
 		item_wh_list = []
@@ -402,7 +398,7 @@ class SubcontractingOrder(SubcontractingController):
 
 				reservation_items.append(data)
 
-			sre = StockReservation(self, items=reservation_items, notify=True)
+			sre = StockReservation(self, items=reservation_items)
 			if is_transfer:
 				sre.transfer_reservation_entries_to(
 					self.production_plan, from_doctype="Production Plan", to_doctype="Subcontracting Order"
@@ -440,6 +436,13 @@ def get_mapped_subcontracting_receipt(source_name, target_doc=None, items=None):
 		target.purchase_order = source_parent.purchase_order
 		target.purchase_order_item = source.purchase_order_item
 		target.qty = items.get(source.name) or (flt(source.qty) - flt(source.received_qty))
+		target.received_qty = target.qty
+		if process_loss_per := frappe.get_value("BOM", source.bom, "process_loss_percentage"):
+			target.process_loss_qty = flt(
+				target.qty * (process_loss_per / 100), target.precision("process_loss_qty")
+			)
+			target.qty -= target.process_loss_qty
+
 		target.amount = (flt(source.qty) - flt(source.received_qty)) * flt(source.rate)
 
 	items = {item["name"]: item["qty"] for item in items} if items else {}
@@ -476,9 +479,18 @@ def get_mapped_subcontracting_receipt(source_name, target_doc=None, items=None):
 	return target_doc
 
 
-@frappe.whitelist()
-def update_subcontracting_order_status(sco: str | Document, status: str | None = None):
+def set_subcontracting_order_status(sco: str | Document, status: str | None = None):
 	if isinstance(sco, str):
 		sco = frappe.get_doc("Subcontracting Order", sco)
 
 	sco.update_status(status)
+
+
+@frappe.whitelist()
+def update_subcontracting_order_status(sco: str | Document, status: str | None = None):
+	"""Whitelisted boundary for direct API/UI calls — enforces write permission, then delegates."""
+	if isinstance(sco, str):
+		sco = frappe.get_doc("Subcontracting Order", sco)
+
+	sco.check_permission("write")
+	set_subcontracting_order_status(sco, status)

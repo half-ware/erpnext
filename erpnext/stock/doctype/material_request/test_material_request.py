@@ -6,24 +6,29 @@
 
 
 import frappe
-from frappe.tests import IntegrationTestCase
 from frappe.utils import flt, today
 
 from erpnext.controllers.accounts_controller import InvalidQtyError
 from erpnext.stock.doctype.item.test_item import create_item
-from erpnext.stock.doctype.material_request.material_request import (
+from erpnext.stock.doctype.material_request.mapper import (
 	create_pick_list,
 	make_in_transit_stock_entry,
 	make_purchase_order,
 	make_stock_entry,
 	make_supplier_quotation,
+)
+from erpnext.stock.doctype.material_request.material_request import (
 	raise_work_orders,
 )
 from erpnext.stock.doctype.stock_entry.stock_entry import make_stock_in_entry
 from erpnext.stock.doctype.warehouse.test_warehouse import create_warehouse
+from erpnext.tests.utils import ERPNextTestSuite
 
 
-class TestMaterialRequest(IntegrationTestCase):
+class TestMaterialRequest(ERPNextTestSuite):
+	def setUp(self):
+		self.load_test_records("Material Request")
+
 	def test_material_request_qty(self):
 		mr = frappe.copy_doc(self.globalTestRecords["Material Request"][0])
 		mr.items[0].qty = 0
@@ -912,7 +917,7 @@ class TestMaterialRequest(IntegrationTestCase):
 		for company, _mr_list in comapnywise_mr_list.items():
 			emails = get_email_list(company)
 
-			self.assertTrue(comapnywise_users[company] in emails)
+			self.assertIn(comapnywise_users[company], emails)
 
 		for perm in permissions:
 			perm.delete()
@@ -977,7 +982,7 @@ class TestMaterialRequest(IntegrationTestCase):
 		from frappe.utils import add_to_date, today
 
 		from erpnext.selling.doctype.product_bundle.test_product_bundle import make_product_bundle
-		from erpnext.selling.doctype.sales_order.sales_order import make_material_request
+		from erpnext.selling.doctype.sales_order.mapper import make_material_request
 		from erpnext.selling.doctype.sales_order.test_sales_order import make_sales_order
 
 		sub_item_a = "_Test Bundle ItemA"
@@ -1016,7 +1021,7 @@ class TestMaterialRequest(IntegrationTestCase):
 		"""Test for pick list mapped doc qty from partially received Material Request Transfer"""
 		import json
 
-		from erpnext.stock.doctype.pick_list.pick_list import create_stock_entry
+		from erpnext.stock.doctype.pick_list.mapper import create_stock_entry
 		from erpnext.stock.doctype.stock_entry.stock_entry_utils import make_stock_entry
 
 		new_item = create_item("_Test Pick List Item", is_stock_item=1)
@@ -1080,7 +1085,9 @@ class TestMaterialRequest(IntegrationTestCase):
 
 		pl.locations[0].qty = 2
 		pl.locations[0].stock_qty = 2
-		self.assertRaises(frappe.ValidationError, pl.submit)
+
+		# System should allow picking qty for excess transfer
+		pl.submit()
 
 	def test_mr_status_with_partial_and_excess_end_transit(self):
 		material_request = make_material_request(
@@ -1191,6 +1198,3 @@ def make_material_request(**args):
 	if not args.do_not_submit:
 		mr.submit()
 	return mr
-
-
-EXTRA_TEST_RECORD_DEPENDENCIES = ["Currency Exchange", "BOM"]

@@ -6,7 +6,6 @@ import json
 import frappe
 from frappe import utils
 from frappe.model.docstatus import DocStatus
-from frappe.tests import IntegrationTestCase
 
 from erpnext.accounts.doctype.bank_reconciliation_tool.bank_reconciliation_tool import (
 	get_linked_payments,
@@ -19,12 +18,10 @@ from erpnext.accounts.doctype.payment_entry.test_payment_entry import get_paymen
 from erpnext.accounts.doctype.pos_profile.test_pos_profile import make_pos_profile
 from erpnext.accounts.doctype.purchase_invoice.test_purchase_invoice import make_purchase_invoice
 from erpnext.accounts.doctype.sales_invoice.test_sales_invoice import create_sales_invoice
-from erpnext.tests.utils import if_lending_app_installed
-
-EXTRA_TEST_RECORD_DEPENDENCIES = ["Item", "Cost Center"]
+from erpnext.tests.utils import ERPNextTestSuite, if_lending_app_installed
 
 
-class TestBankTransaction(IntegrationTestCase):
+class TestBankTransaction(ERPNextTestSuite):
 	def setUp(self):
 		make_pos_profile()
 
@@ -50,7 +47,7 @@ class TestBankTransaction(IntegrationTestCase):
 			from_date=bank_transaction.date,
 			to_date=utils.today(),
 		)
-		self.assertTrue(linked_payments[0]["party"] == "Conrad Electronic")
+		self.assertEqual(linked_payments[0]["party"], "Conrad Electronic")
 
 	# This test validates a simple reconciliation leading to the clearance of the bank transaction and the payment
 	def test_reconcile(self):
@@ -73,10 +70,10 @@ class TestBankTransaction(IntegrationTestCase):
 		unallocated_amount = frappe.db.get_value(
 			"Bank Transaction", bank_transaction.name, "unallocated_amount"
 		)
-		self.assertTrue(unallocated_amount == 0)
+		self.assertEqual(unallocated_amount, 0)
 
 		clearance_date = frappe.db.get_value("Payment Entry", payment.name, "clearance_date")
-		self.assertTrue(clearance_date is not None)
+		self.assertIsNot(clearance_date, None)
 
 		bank_transaction.reload()
 		bank_transaction.cancel()
@@ -181,9 +178,8 @@ class TestBankTransaction(IntegrationTestCase):
 		self.assertEqual(
 			frappe.db.get_value("Bank Transaction", bank_transaction.name, "unallocated_amount"), 0
 		)
-		self.assertTrue(
-			frappe.db.get_value("Sales Invoice Payment", dict(parent=payment.name), "clearance_date")
-			is not None
+		self.assertIsNot(
+			frappe.db.get_value("Sales Invoice Payment", dict(parent=payment.name), "clearance_date"), None
 		)
 
 	@if_lending_app_installed
@@ -385,7 +381,7 @@ def add_vouchers(gl_account="_Test Bank - _TC"):
 		frappe.get_doc(
 			{
 				"doctype": "Customer",
-				"customer_group": "All Customer Groups",
+				"customer_group": "Individual",
 				"customer_type": "Company",
 				"customer_name": "Poore Simon's",
 			}
@@ -416,7 +412,7 @@ def add_vouchers(gl_account="_Test Bank - _TC"):
 		frappe.get_doc(
 			{
 				"doctype": "Customer",
-				"customer_group": "All Customer Groups",
+				"customer_group": "Individual",
 				"customer_type": "Company",
 				"customer_name": "Fayva",
 			}

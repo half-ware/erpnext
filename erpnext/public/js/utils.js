@@ -19,6 +19,97 @@ $.extend(erpnext, {
 		return currency_list;
 	},
 
+	toggle_serial_batch_fields(frm) {
+		let hide_fields = cint(frappe.user_defaults?.enable_serial_and_batch_no_for_item) === 0 ? 1 : 0;
+		if (!hide_fields) {
+			return;
+		}
+
+		let fields = ["serial_and_batch_bundle", "use_serial_batch_fields", "serial_no", "batch_no"];
+
+		if (
+			[
+				"Stock Entry",
+				"Purchase Receipt",
+				"Purchase Invoice",
+				"Stock Reconciliation",
+				"Subcontracting Receipt",
+			].includes(frm.doc.doctype)
+		) {
+			fields.push("add_serial_batch_bundle");
+		}
+
+		if (["Stock Reconciliation"].includes(frm.doc.doctype)) {
+			fields.push("reconcile_all_serial_batch");
+		}
+
+		if (["Sales Invoice", "Delivery Note", "Pick List"].includes(frm.doc.doctype)) {
+			fields.push("pick_serial_and_batch");
+		}
+
+		if (["Purchase Receipt", "Purchase Invoice", "Subcontracting Receipt"].includes(frm.doc.doctype)) {
+			fields.push(
+				"add_serial_batch_for_rejected_qty",
+				"rejected_serial_and_batch_bundle",
+				"rejected_serial_no"
+			);
+		}
+
+		let child_name = "items";
+		if (frm.doc.doctype === "Pick List") {
+			child_name = "locations";
+		}
+
+		if (frm.doc.doctype === "Asset Capitalization") {
+			child_name = "stock_items";
+		}
+
+		let sn_field = frm.fields_dict[child_name].grid.docfields.filter((d) => d.fieldname === "serial_no");
+		if (sn_field?.length && sn_field[0].hidden === 1) {
+			// Already field is hidden
+			return;
+		}
+
+		fields.forEach((field) => {
+			if (frm.fields_dict[child_name].get_field(field)) {
+				frm.fields_dict[child_name].grid.update_docfield_property(field, "hidden", hide_fields);
+
+				frm.fields_dict[child_name].grid.update_docfield_property(
+					field,
+					"in_list_view",
+					hide_fields ? 0 : 1
+				);
+
+				if (
+					frm.doc.doctype === "Subcontracting Receipt" &&
+					![
+						"add_serial_batch_for_rejected_qty",
+						"rejected_serial_and_batch_bundle",
+						"rejected_serial_no",
+					].includes(field)
+				) {
+					frm.fields_dict["supplied_items"].grid.update_docfield_property(
+						field,
+						"hidden",
+						hide_fields
+					);
+
+					frm.fields_dict["supplied_items"].grid.update_docfield_property(
+						field,
+						"in_list_view",
+						hide_fields ? 0 : 1
+					);
+				}
+			}
+		});
+
+		if (frm.doc.doctype === "Subcontracting Receipt") {
+			frm.fields_dict["supplied_items"].grid.reset_grid();
+		}
+
+		frm.fields_dict[child_name].grid.reset_grid();
+	},
+
 	toggle_naming_series: function () {
 		if (
 			cur_frm &&
@@ -643,6 +734,7 @@ erpnext.utils.update_child_items = function (opts) {
 			read_only: 0,
 			disabled: 0,
 			label: __("Item Code"),
+			formatter: (value) => value,
 			get_query: function () {
 				let filters;
 				if (frm.doc.doctype == "Sales Order") {
@@ -653,11 +745,7 @@ erpnext.utils.update_child_items = function (opts) {
 					}
 				} else if (frm.doc.doctype == "Purchase Order") {
 					if (frm.doc.is_subcontracted) {
-						if (frm.doc.is_old_subcontracting_flow) {
-							filters = { is_sub_contracted_item: 1 };
-						} else {
-							filters = { is_stock_item: 0 };
-						}
+						filters = { is_stock_item: 0 };
 					} else {
 						filters = { is_purchase_item: 1 };
 					}
@@ -700,7 +788,6 @@ erpnext.utils.update_child_items = function (opts) {
 							pos_profile: cint(frm.doc.is_pos) ? frm.doc.pos_profile : "",
 							tax_category: frm.doc.tax_category,
 							child_doctype: frm.doc.doctype + " Item",
-							is_old_subcontracting_flow: frm.doc.is_old_subcontracting_flow,
 						},
 					},
 					callback: function (r) {
@@ -813,11 +900,7 @@ erpnext.utils.update_child_items = function (opts) {
 		});
 	}
 
-	if (
-		["Purchase Order", "Sales Order"].includes(frm.doc.doctype) &&
-		frm.doc.is_subcontracted &&
-		!frm.doc.is_old_subcontracting_flow
-	) {
+	if (["Purchase Order", "Sales Order"].includes(frm.doc.doctype) && frm.doc.is_subcontracted) {
 		fields.push(
 			{
 				fieldtype: "Link",

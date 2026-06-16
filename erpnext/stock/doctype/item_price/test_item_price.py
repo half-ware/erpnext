@@ -3,18 +3,15 @@
 
 
 import frappe
-from frappe.tests import IntegrationTestCase
-from frappe.tests.utils import make_test_records_for_doctype
 
 from erpnext.stock.doctype.item_price.item_price import ItemPriceDuplicateItem
 from erpnext.stock.get_item_details import ItemDetailsCtx, get_price_list_rate_for
+from erpnext.tests.utils import ERPNextTestSuite
 
 
-class TestItemPrice(IntegrationTestCase):
+class TestItemPrice(ERPNextTestSuite):
 	def setUp(self):
-		super().setUp()
-		frappe.db.sql("delete from `tabItem Price`")
-		make_test_records_for_doctype("Item Price", force=True)
+		self.load_test_records("Item Price")
 
 	def test_template_item_price(self):
 		from erpnext.stock.doctype.item.test_item import make_item
@@ -57,7 +54,7 @@ class TestItemPrice(IntegrationTestCase):
 		doc_fields = frappe.copy_doc(self.globalTestRecords["Item Price"][1]).__dict__.keys()
 
 		for test_field in test_fields_existance:
-			self.assertTrue(test_field in doc_fields)
+			self.assertIn(test_field, doc_fields)
 
 	def test_dates_validation_error(self):
 		doc = frappe.copy_doc(self.globalTestRecords["Item Price"][1])
@@ -195,6 +192,5 @@ class TestItemPrice(IntegrationTestCase):
 		)
 
 		price = get_price_list_rate_for(ctx, doc.item_code)
-		frappe.db.rollback()
 
 		self.assertEqual(price, 21)

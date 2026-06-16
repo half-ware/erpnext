@@ -6,25 +6,18 @@ from frappe.utils import add_days, getdate, nowdate
 
 from erpnext.projects.doctype.project_template.test_project_template import make_project_template
 from erpnext.projects.doctype.task.test_task import create_task
-from erpnext.selling.doctype.sales_order.sales_order import make_project as make_project_from_so
+from erpnext.selling.doctype.sales_order.mapper import make_project as make_project_from_so
 from erpnext.selling.doctype.sales_order.test_sales_order import make_sales_order
 from erpnext.tests.utils import ERPNextTestSuite
 
-IGNORE_TEST_RECORD_DEPENDENCIES = ["Sales Order"]
-
 
 class TestProject(ERPNextTestSuite):
-	@classmethod
-	def setUpClass(cls):
-		super().setUpClass()
-		cls.make_projects()
-
 	def test_project_total_costing_and_billing_amount(self):
 		from erpnext.projects.doctype.timesheet.test_timesheet import make_timesheet
 		from erpnext.setup.doctype.employee.test_employee import make_employee
 
 		project_name = "Test Project Costing"
-		employee = make_employee("employee@frappe.io")
+		employee = make_employee("employee@frappe.io", company="_Test Company")
 		project = make_project({"project_name": project_name})
 		timesheet = make_timesheet(
 			employee=employee,
@@ -159,7 +152,7 @@ class TestProject(ERPNextTestSuite):
 
 		self.assertEqual(tasks[1].subject, "Test Template Task with Dependency")
 		self.assertEqual(getdate(tasks[1].exp_end_date), calculate_end_date(project, 2, 2))
-		self.assertTrue(tasks[1].depends_on_tasks.find(tasks[0].name) >= 0)
+		self.assertGreaterEqual(tasks[1].depends_on_tasks.find(tasks[0].name), 0)
 
 		self.assertEqual(tasks[0].subject, "Test Template Task for Dependency")
 		self.assertEqual(getdate(tasks[0].exp_end_date), calculate_end_date(project, 3, 1))

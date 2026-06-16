@@ -16,7 +16,9 @@ class StockRepostingSettings(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
+		do_not_fetch_incoming_rate_from_serial_no: DF.Check
 		enable_parallel_reposting: DF.Check
+		enable_separate_reposting_for_gl: DF.Check
 		end_time: DF.Time | None
 		item_based_reposting: DF.Check
 		limit_reposting_timeslot: DF.Check
@@ -57,7 +59,7 @@ class StockRepostingSettings(Document):
 		if diff < 10:
 			self.end_time = get_time_str(add_to_date(self.start_time, hours=10, as_datetime=True))
 
-	@frappe.whitelist()
+	@frappe.whitelist(methods=["POST"])
 	def convert_to_item_wh_reposting(self):
 		"""Convert Transaction reposting to Item Warehouse based reposting if Item Based Reposting has enabled."""
 

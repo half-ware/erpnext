@@ -2,12 +2,12 @@
 # See license.txt
 
 import frappe
-from frappe.tests import IntegrationTestCase
 
 from erpnext.stock.doctype.repost_item_valuation.repost_item_valuation import get_recipients
+from erpnext.tests.utils import ERPNextTestSuite
 
 
-class TestStockRepostingSettings(IntegrationTestCase):
+class TestStockRepostingSettings(ERPNextTestSuite):
 	def test_notify_reposting_error_to_role(self):
 		role = "Notify Reposting Role"
 
@@ -31,9 +31,9 @@ class TestStockRepostingSettings(IntegrationTestCase):
 		frappe.db.set_single_value("Stock Reposting Settings", "notify_reposting_error_to_role", "")
 
 		users = get_recipients()
-		self.assertFalse(user in users)
+		self.assertNotIn(user, users)
 
 		frappe.db.set_single_value("Stock Reposting Settings", "notify_reposting_error_to_role", role)
 
 		users = get_recipients()
-		self.assertTrue(user in users)
+		self.assertIn(user, users)

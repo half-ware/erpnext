@@ -596,9 +596,9 @@ def make_return_doc(doctype: str, source_name: str, target_doc=None, return_agai
 			target_doc.against_sales_order = source_doc.against_sales_order
 			target_doc.against_sales_invoice = source_doc.against_sales_invoice
 			target_doc.so_detail = source_doc.so_detail
-			target_doc.si_detail = source_doc.si_detail
 			target_doc.expense_account = source_doc.expense_account
 			target_doc.dn_detail = source_doc.name
+			target_doc.cost_center = source_doc.cost_center
 			if default_warehouse_for_sales_return:
 				target_doc.warehouse = default_warehouse_for_sales_return
 		elif doctype == "Sales Invoice" or doctype == "POS Invoice":
@@ -1012,7 +1012,14 @@ def get_serial_batches_based_on_bundle(doctype, field, _bundle_ids):
 
 		if doctype == "Packed Item":
 			if key is None:
-				key = frappe.get_cached_value("Packed Item", row.voucher_detail_no, field)
+				key = frappe.get_cached_value(
+					"Packed Item",
+					{"parent_detail_docname": row.voucher_detail_no, "item_code": row.item_code},
+					field,
+				)
+				if key is None:
+					key = frappe.get_cached_value("Packed Item", row.voucher_detail_no, field)
+
 				if row.voucher_type == "Delivery Note":
 					key = frappe.get_cached_value("Delivery Note Item", key, "dn_detail")
 				elif row.voucher_type == "Sales Invoice":

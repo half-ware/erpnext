@@ -2,12 +2,12 @@
 # See license.txt
 
 import frappe
-from frappe.tests import IntegrationTestCase
 
 from erpnext.assets.doctype.asset.test_asset import create_asset
+from erpnext.tests.utils import ERPNextTestSuite
 
 
-class TestAssetCategory(IntegrationTestCase):
+class TestAssetCategory(ERPNextTestSuite):
 	def test_mandatory_fields(self):
 		asset_category = frappe.new_doc("Asset Category")
 		asset_category.asset_category_name = "Computers"
@@ -72,7 +72,7 @@ class TestAssetCategory(IntegrationTestCase):
 		)
 		with self.assertRaises(frappe.ValidationError) as err:
 			asset_category.save()
-		self.assertTrue("Cannot set multiple account rows for the same company" in str(err.exception))
+		self.assertIn("Cannot set multiple account rows for the same company", str(err.exception))
 
 	def test_depreciation_accounts_required_for_existing_depreciable_assets(self):
 		asset = create_asset(
@@ -110,9 +110,9 @@ class TestAssetCategory(IntegrationTestCase):
 			with self.assertRaises(frappe.ValidationError) as err:
 				asset_category.save()
 
-			self.assertTrue(
-				"Since there are active depreciable assets under this category, the following accounts are required."
-				in str(err.exception)
+			self.assertIn(
+				"Since there are active depreciable assets under this category, the following accounts are required.",
+				str(err.exception),
 			)
 		finally:
 			frappe.db.set_value("Company", asset.company, company_acccount_depreciation)

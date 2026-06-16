@@ -101,6 +101,7 @@ class ProcessStatementOfAccounts(Document):
 
 		validate_template(self.subject)
 		validate_template(self.body)
+		validate_template(self.pdf_name)
 
 		if not self.customers:
 			frappe.throw(_("Customers not selected."))
@@ -420,7 +421,7 @@ def get_context(customer, doc):
 
 
 @frappe.whitelist()
-def fetch_customers(customer_collection, collection_name, primary_mandatory):
+def fetch_customers(customer_collection: str, collection_name: str, primary_mandatory: str | int):
 	customer_list = []
 	customers = []
 
@@ -460,10 +461,12 @@ def fetch_customers(customer_collection, collection_name, primary_mandatory):
 
 
 @frappe.whitelist()
-def get_customer_emails(customer_name, primary_mandatory, billing_and_primary=True):
+def get_customer_emails(customer_name: str, primary_mandatory: str | int, billing_and_primary: bool = True):
 	"""Returns first email from Contact Email table as a Billing email
 	when Is Billing Contact checked
 	and Primary email- email with Is Primary checked"""
+
+	frappe.has_permission("Customer", "read", customer_name, throw=True)
 
 	billing_email = frappe.db.sql(
 		"""
@@ -506,8 +509,9 @@ def get_customer_emails(customer_name, primary_mandatory, billing_and_primary=Tr
 
 
 @frappe.whitelist()
-def download_statements(document_name):
+def download_statements(document_name: str):
 	doc = frappe.get_doc("Process Statement Of Accounts", document_name)
+	doc.check_permission("read")
 	report = get_report_pdf(doc)
 	if report:
 		frappe.local.response.filename = doc.name + ".pdf"
@@ -516,8 +520,9 @@ def download_statements(document_name):
 
 
 @frappe.whitelist()
-def send_emails(document_name, from_scheduler=False, posting_date=None):
+def send_emails(document_name: str, from_scheduler: bool = False, posting_date: str | None = None):
 	doc = frappe.get_doc("Process Statement Of Accounts", document_name)
+	doc.check_permission()
 	report = get_report_pdf(doc, consolidated=False)
 
 	if report:
@@ -563,10 +568,10 @@ def send_emails(document_name, from_scheduler=False, posting_date=None):
 			new_from_date = add_months(new_to_date, -1 * doc.filter_duration)
 			doc.add_comment("Comment", "Emails sent on: " + frappe.utils.format_datetime(frappe.utils.now()))
 			if doc.report == "General Ledger":
-				doc.db_set("to_date", new_to_date, commit=True)
-				doc.db_set("from_date", new_from_date, commit=True)
+				frappe.db.set_value(doc.doctype, doc.name, "to_date", new_to_date)
+				frappe.db.set_value(doc.doctype, doc.name, "from_date", new_from_date)
 			else:
-				doc.db_set("posting_date", new_to_date, commit=True)
+				frappe.db.set_value(doc.doctype, doc.name, "posting_date", new_to_date)
 		return True
 	else:
 		return False
@@ -574,6 +579,7 @@ def send_emails(document_name, from_scheduler=False, posting_date=None):
 
 @frappe.whitelist()
 def send_auto_email():
+	frappe.has_permission("Process Statement Of Accounts", throw=True)
 	selected = frappe.get_list(
 		"Process Statement Of Accounts",
 		filters={"enable_auto_email": 1},

@@ -5,7 +5,6 @@
 import json
 
 import frappe
-from frappe.tests import IntegrationTestCase
 from frappe.utils import flt
 
 from erpnext.accounts.party import get_due_date
@@ -13,18 +12,14 @@ from erpnext.exceptions import PartyDisabled, PartyFrozen
 from erpnext.selling.doctype.customer.customer import (
 	get_credit_limit,
 	get_customer_outstanding,
+)
+from erpnext.selling.doctype.customer.mapper import (
 	parse_full_name,
 )
-from erpnext.tests.utils import create_test_contact_and_address
-
-IGNORE_TEST_RECORD_DEPENDENCIES = ["Price List"]
-EXTRA_TEST_RECORD_DEPENDENCIES = ["Payment Term", "Payment Terms Template"]
+from erpnext.tests.utils import ERPNextTestSuite
 
 
-class TestCustomer(IntegrationTestCase):
-	def tearDown(self):
-		set_credit_limit("_Test Customer", "_Test Company", 0)
-
+class TestCustomer(ERPNextTestSuite):
 	def test_get_customer_group_details(self):
 		doc = frappe.new_doc("Customer Group")
 		doc.customer_group_name = "_Testing Customer Group"
@@ -60,7 +55,7 @@ class TestCustomer(IntegrationTestCase):
 		doc.delete()
 
 	def test_party_details(self):
-		from erpnext.accounts.party import get_party_details
+		from erpnext.accounts.party import _get_party_details
 
 		to_check = {
 			"selling_price_list": None,
@@ -78,13 +73,11 @@ class TestCustomer(IntegrationTestCase):
 			"customer_name": "_Test Customer",
 		}
 
-		create_test_contact_and_address()
-
 		frappe.db.set_value(
 			"Contact", "_Test Contact for _Test Customer-_Test Customer", "is_primary_contact", 1
 		)
 
-		details = get_party_details("_Test Customer")
+		details = _get_party_details("_Test Customer")
 
 		for key, value in to_check.items():
 			val = details.get(key)
@@ -94,16 +87,13 @@ class TestCustomer(IntegrationTestCase):
 			self.assertEqual(value, val)
 
 	def test_party_details_tax_category(self):
-		from erpnext.accounts.party import get_party_details
-
-		frappe.delete_doc_if_exists("Address", "_Test Address With Tax Category-Billing")
-		frappe.delete_doc_if_exists("Address", "_Test Address With Tax Category-Shipping")
+		from erpnext.accounts.party import _get_party_details
 
 		# Tax Category without Address
-		details = get_party_details("_Test Customer With Tax Category")
+		details = _get_party_details("_Test Customer With Tax Category")
 		self.assertEqual(details.tax_category, "_Test Tax Category 1")
 
-		billing_address = frappe.get_doc(
+		frappe.get_doc(
 			doctype="Address",
 			address_title="_Test Address With Tax Category",
 			tax_category="_Test Tax Category 2",
@@ -111,9 +101,10 @@ class TestCustomer(IntegrationTestCase):
 			address_line1="Station Road",
 			city="_Test City",
 			country="India",
+			is_primary_address=True,
 			links=[dict(link_doctype="Customer", link_name="_Test Customer With Tax Category")],
 		).insert()
-		shipping_address = frappe.get_doc(
+		frappe.get_doc(
 			doctype="Address",
 			address_title="_Test Address With Tax Category",
 			tax_category="_Test Tax Category 3",
@@ -121,6 +112,7 @@ class TestCustomer(IntegrationTestCase):
 			address_line1="Station Road",
 			city="_Test City",
 			country="India",
+			is_shipping_address=True,
 			links=[dict(link_doctype="Customer", link_name="_Test Customer With Tax Category")],
 		).insert()
 
@@ -130,31 +122,23 @@ class TestCustomer(IntegrationTestCase):
 		# Tax Category from Billing Address
 		settings.determine_address_tax_category_from = "Billing Address"
 		settings.save()
-		details = get_party_details("_Test Customer With Tax Category")
+		details = _get_party_details("_Test Customer With Tax Category")
 		self.assertEqual(details.tax_category, "_Test Tax Category 2")
 
 		# Tax Category from Shipping Address
 		settings.determine_address_tax_category_from = "Shipping Address"
 		settings.save()
-		details = get_party_details("_Test Customer With Tax Category")
+		details = _get_party_details("_Test Customer With Tax Category")
 		self.assertEqual(details.tax_category, "_Test Tax Category 3")
 
 		# Rollback
 		settings.determine_address_tax_category_from = rollback_setting
 		settings.save()
-		billing_address.delete()
-		shipping_address.delete()
 
 	def test_rename(self):
 		# delete communication linked to these 2 customers
 
 		new_name = "_Test Customer 1 Renamed"
-		for name in ("_Test Customer 1", new_name):
-			frappe.db.sql(
-				"""delete from `tabComment`
-				where reference_doctype=%s and reference_name=%s""",
-				("Customer", name),
-			)
 
 		# add comments
 		comment = frappe.get_doc("Customer", "_Test Customer 1").add_comment(
@@ -183,8 +167,6 @@ class TestCustomer(IntegrationTestCase):
 
 		# rename back to original
 		frappe.rename_doc("Customer", new_name, "_Test Customer 1")
-
-		frappe.db.rollback()
 
 	def test_freezed_customer(self):
 		frappe.db.set_value("Customer", "_Test Customer", "is_frozen", 1)
@@ -223,8 +205,6 @@ class TestCustomer(IntegrationTestCase):
 		so.save()
 
 	def test_duplicate_customer(self):
-		frappe.db.sql("delete from `tabCustomer` where customer_name='_Test Customer 1'")
-
 		if not frappe.db.get_value("Customer", "_Test Customer 1"):
 			test_customer_1 = frappe.get_doc(get_customer_dict("_Test Customer 1")).insert(
 				ignore_permissions=True
@@ -371,6 +351,15 @@ class TestCustomer(IntegrationTestCase):
 		self.assertEqual(first, "John")
 		self.assertEqual(middle, "Michael")
 		self.assertEqual(last, "Doe")
+
+	def test_get_notification_email(self):
+		admin_email = frappe.db.get_value("User", "Administrator", "email")
+		customer = frappe.new_doc("Customer")
+		customer.account_manager = "Administrator"
+		self.assertEqual(customer.get_notification_email(), admin_email)
+
+		customer.account_manager = None
+		self.assertIsNone(customer.get_notification_email())
 
 
 def get_customer_dict(customer_name):
