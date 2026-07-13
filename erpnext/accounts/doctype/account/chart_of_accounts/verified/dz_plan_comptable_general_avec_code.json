@@ -781,12 +781,15 @@
             "42-Personnel et comptes rattach\u00e9s (ACTIF)": {
                 "Personnel : Avances et acomptes accordés": {
                     "Avances sur salaires": {
+                        "account_type": "Receivable",
                         "account_number": "4251"
                     },
                     "Avances sur frais de mission": {
+                        "account_type": "Receivable",
                         "account_number": "4256"
                     },
                     "Autres avances exceptionnelles": {
+                        "account_type": "Receivable",
                         "account_number": "4258"
                     },
                     "account_number": "425"
