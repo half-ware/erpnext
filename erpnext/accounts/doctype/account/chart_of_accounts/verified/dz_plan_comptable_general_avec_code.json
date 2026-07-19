@@ -693,9 +693,11 @@
                 "Fournisseurs d\u00e9biteurs : avances et acomptes, RRR à obtenir, autres créances": {
                     "Fournisseurs : Avances et acomptes sur commandes": {
                         "Avances et acomptes sur acquisition de Stocks": {
+                            "account_type": "Payable",
                             "account_number": "40913"
                         },
                         "Avances et acomptes sur achats de services": {
+                            "account_type": "Payable",
                             "account_number": "40916"
                         },
                         "account_number": "4091"
@@ -716,7 +718,6 @@
                 }
             },
             "41-Clients et comptes rattach\u00e9s (ACTIF)": {
-                "account_type": "Receivable",
                 "Clients": {
                     "account_type": "Receivable",
                     "Clients : Ventes de biens et services": {
@@ -781,12 +782,15 @@
             "42-Personnel et comptes rattach\u00e9s (ACTIF)": {
                 "Personnel : Avances et acomptes accordés": {
                     "Avances sur salaires": {
+                        "account_type": "Receivable",
                         "account_number": "4251"
                     },
                     "Avances sur frais de mission": {
+                        "account_type": "Receivable",
                         "account_number": "4256"
                     },
                     "Autres avances exceptionnelles": {
+                        "account_type": "Receivable",
                         "account_number": "4258"
                     },
                     "account_number": "425"
@@ -1333,11 +1337,11 @@
                 "468-Divers Charges \u00e0 payer et produits \u00e0 recevoir (PASSIF)": {
                     "Charges \u00e0 payer": {
                         "Amendes et pénalités à payer": {
-                            "account_type": "Expense Account",
+                            "account_type": "Payable",
                             "account_number": "46861"
                         },
                         "Autres charges opérationnelles à payer": {
-                            "account_type": "Expense Account",
+                            "account_type": Payable",
                             "account_number": "46862"
                         },
                         "account_number": "4686"
@@ -1984,19 +1988,23 @@
                 },
                 "Transports de biens et transport collectif du personnel": {
                     "Transport sur ventes": {
+                        "account_type": "Expense Account",
                         "account_number": "6241"
                     },
                     "Transport collectif du personnel": {
-                        "account_type": "Chargeable",
+                        "account_type": "Expense Account",
                         "account_number": "6242"
                     },
                     "Transports entre \u00e9tablissements ou chantiers": {
+                        "account_type": "Expense Account",
                         "account_number": "6243"
                     },
                     "Transports administratifs": {
+                        "account_type": "Expense Account",
                         "account_number": "6244"
                     },
                     "Autres transports divers": {
+                        "account_type": "Expense Account",
                         "account_number": "6248"
                     },
                     "account_number": "624"
@@ -2693,7 +2701,7 @@
                             "account_number": "72331"
                         },
                         "Travaux en cours": {
-                            "account_number": "72235"
+                            "account_number": "72335"
                         },
                         "account_number": "7233"
                     },
